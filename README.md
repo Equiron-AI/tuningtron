@@ -1,6 +1,6 @@
 # Welcome to Tuningtron!
 
-![tuningtron_left](https://github.com/user-attachments/assets/15994c54-68f5-485c-9b24-4c428d0bf0c7)
+![tuningtron_left](https://github.com/user-attachments/assets/4de3a715-36cc-4ee9-b823-9920ef5785f8)
 
 **Tuningtron** is a library built on top of **Hugging Face Transformers**, designed to simplify the process of fine-tuning large language models (LLMs) for developers. It focuses on making LLM fine-tuning feasible even with limited computational resources, such as Nvidia GeForce RTX 3090 GPUs. The library supports training on both GPUs and CPUs, and it includes a feature for offloading model weights to the CPU when using a single GPU. With one **Nvidia GeForce RTX 3090 GPU** and **256 GB of RAM**, Tuningtron can handle fine-tuning models with up to approximately **70 billion** parameters.
 
