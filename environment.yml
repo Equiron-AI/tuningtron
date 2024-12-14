@@ -1,0 +1,14 @@
+name: tuningtron-gpu
+channels:
+  - pytorch
+  - conda-forge
+  - nvidia/label/cuda-12.4.0
+dependencies:
+  - pip
+  - python=3.11
+  - nvidia/label/cuda-12.4.0::libcublas
+  - pytorch-cuda=12.4
+  - pytorch=2.5.1
+  - pip:
+    - flash-attn>=2.7.2
+    - mpi4py>=4.0.1

@@ -1,0 +1,4 @@
+dist
+.ipynb_checkpoints
+**.pyc
+src/tuningtron.egg-info
