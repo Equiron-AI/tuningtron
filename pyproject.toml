@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "tuningtron"
-version = "0.0.17"
+version = "0.0.18"
 authors = [
   { name="Vladimir Petrukhin", email="man4j@ya.ru" },
 ]
@@ -18,11 +18,12 @@ classifiers = [
     "Operating System :: OS Independent",
 ]
 dependencies = [
-  "transformers>=4.47.0",
+  "transformers>=4.46.3",
   "datasets>=3.2.0",
   "peft>=0.14.0",
   "deepspeed==0.16.1",
-  "sentencepiece>=0.2.0"
+  "sentencepiece>=0.2.0",
+  "trl>=0.12.2"
 ]
 
 [project.urls]

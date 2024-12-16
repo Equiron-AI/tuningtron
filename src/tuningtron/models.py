@@ -10,9 +10,7 @@ class BaseModel:
         self.base_model_id = base_model_id
         self.config = config
         self.tokenizer = AutoTokenizer.from_pretrained(base_model_id, add_bos_token=False)
-
-        # В документации по Cohere Aya указаны только модули "q_proj", "v_proj", "k_proj", "o_proj"
-        self.target_modules = ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj", "lm_head"]
+        self.target_modules = ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"]
         if self.tokenizer.pad_token:
             logger.info("Pad token: " + self.tokenizer.pad_token)
         else:
@@ -35,38 +33,30 @@ class BaseModel:
 class GemmaModel(BaseModel):
     def __init__(self, base_model_id, config):
         BaseModel.__init__(self, base_model_id, config)
+        self.response_template = "<start_of_turn>model"
 
     def apply_chat_template(self, record):
         if "text" in record and record["text"]:
-            return record["text"]
-
-        inst = record["instruct"]
-        inpt = record["input"]
-        outp = record["output"]
-        return f"""<bos><start_of_turn>system
-{inst}<end_of_turn>
-<start_of_turn>user
-{inpt}<end_of_turn>
-<start_of_turn>model
-{outp}<end_of_turn>
-"""
+            return record["text"].strip()
+        chat = [
+            {"role": "user",      "content": record["instruct"].strip() + "\n\n" + record["input"].strip()},
+            {"role": "assistant", "content": record["output"].strip()}
+        ]
+        return self.tokenizer.apply_chat_template(chat, tokenize=False)
 
 
 class CohereModel(BaseModel):
     def __init__(self, base_model_id, config):
         BaseModel.__init__(self, base_model_id, config)
+        self.response_template = "<|CHATBOT_TOKEN|>"
 
     def apply_chat_template(self, record):
         if "text" in record and record["text"]:
-            return record["text"]
-
-        inst = record["instruct"]
-        inpt = record["input"]
-        outp = record["output"]
+            return record["text"].strip()
         chat = [
-            {"role": "system", "content": inst},
-            {"role": "user", "content": inpt},
-            {"role": "assistant", "content": outp}
+            {"role": "system",    "content": record["instruct"].strip()},
+            {"role": "user",      "content": record["input"].strip()},
+            {"role": "assistant", "content": record["output"].strip()}
         ]
         return self.tokenizer.apply_chat_template(chat, tokenize=False)
 
@@ -74,18 +64,15 @@ class CohereModel(BaseModel):
 class QwenModel(BaseModel):
     def __init__(self, base_model_id, config):
         BaseModel.__init__(self, base_model_id, config)
+        self.response_template = "<|im_start|>assistant"
 
     def apply_chat_template(self, record):
         if "text" in record and record["text"]:
-            return record["text"]
-
-        inst = record["instruct"]
-        inpt = record["input"]
-        outp = record["output"]
+            return record["text"].strip()
         chat = [
-            {"role": "system", "content": inst},
-            {"role": "user", "content": inpt},
-            {"role": "assistant", "content": outp}
+            {"role": "system",    "content": record["instruct"].strip()},
+            {"role": "user",      "content": record["input"].strip()},
+            {"role": "assistant", "content": record["output"].strip()}
         ]
         return self.tokenizer.apply_chat_template(chat, tokenize=False)
 

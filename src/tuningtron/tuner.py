@@ -1,6 +1,4 @@
 import os
-
-os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
 import datasets
@@ -9,18 +7,18 @@ import numpy as np
 import logging
 import deepspeed
 from transformers import AutoModelForCausalLM, TrainingArguments, Trainer, DataCollatorForLanguageModeling, AutoTokenizer
+from trl import DataCollatorForCompletionOnlyLM, DPOConfig, DPOTrainer
 from peft import LoraConfig, get_peft_model, PeftModel
 from tuningtron.models import ModelsFactory
 
 
 logger = logging.getLogger(__name__)
 
-if torch.cuda.is_available():
-    deepspeed.init_distributed()
-
 
 class Tuner:
-    def __init__(self, base_model_id):
+    def __init__(self, base_model_id, enable_deepspeed=True):
+        self.print_cuda_info()
+
         self.base_model_id = base_model_id
         self.model_config = ModelsFactory().get_model_config(base_model_id)
         self.tokenizer = self.model_config.tokenizer
@@ -31,8 +29,12 @@ class Tuner:
         self.fp16 = False
         self.attn_implementation = None
         if torch.cuda.is_available():
-            self.device_map = None
-            self.deepspeed = self.get_deepspeed_config()
+            if enable_deepspeed:
+                deepspeed.init_distributed()
+                self.device_map = None
+                self.deepspeed = self.get_deepspeed_config()
+                logger.info("deepspeed: enabled")
+
             if torch.cuda.get_device_capability()[0] >= 8:
                 self.bf16 = True
                 if self.model_config.config.model_type.startswith("gemma"):
@@ -43,28 +45,32 @@ class Tuner:
                 self.fp16 = True
         else:
             self.bf16 = True
+        logger.info(f"Detected hyperparameters: fp16: {self.fp16}, bf16: {self.bf16}, flash_attentions: {self.attn_implementation}")
 
     def get_instruction(self, record):
         return self.model_config.apply_chat_template(record)
 
     def map_func(self, record):
-        return self.tokenizer(self.get_instruction(record),
-                              truncation=True,
-                              max_length=self.max_len,
-                              padding="max_length")
+        return self.tokenizer(self.get_instruction(record), truncation=True, max_length=self.max_len, padding="max_length")
 
     def filter_func(self, record):
-        length = len(self.tokenizer(self.get_instruction(record))["input_ids"])
-        return length <= self.max_len
+        return len(self.tokenizer(self.get_instruction(record))["input_ids"]) <= self.max_len
 
-    def prepare_dataset(self, dataset, eval=False, max_len_percentile=95):
-        self.eval = eval
+    def sft(self,
+            dataset,
+            adapter_name,
+            do_eval=False,
+            max_len_percentile=100,
+            rank=32,
+            lora_alpha=None,
+            lora_dropout=0.1,
+            num_train_epochs=1,
+            batch_size=4,
+            gradient_steps=2,
+            learning_rate=1e-4,
+            comp_only=False):
         dataset = datasets.load_dataset(dataset, split="train")
-        inputs = []
-
-        for record in dataset:
-            inputs.append(self.tokenizer(self.get_instruction(record))["input_ids"])
-
+        inputs = [self.tokenizer(self.get_instruction(record))["input_ids"] for record in dataset]
         target_lenghts = [len(x) for x in inputs]
         self.max_len = int(np.percentile(target_lenghts, max_len_percentile))
 
@@ -87,44 +93,99 @@ class Tuner:
         if "instruct" in dataset.column_names:
             dataset = dataset.remove_columns(["instruct", "input", "output"])
 
-        if eval:
-            dataset = dataset.train_test_split(test_size=0.1)
-            self.train_dataset = dataset["train"]
-            self.eval_dataset = dataset["test"]
-            logger.info("Eval dataset:")
-            logger.info(self.eval_dataset)
+        peft_model = get_peft_model(self.load_base_model(), self.get_lora_config(rank, lora_alpha if lora_alpha else rank))
+        logger.info(peft_model.get_model_status())
+
+        if comp_only:
+            logger.info("Using data collator: CompletionOnlyLM")
+            data_collator = DataCollatorForCompletionOnlyLM(self.model_config.response_template, tokenizer=self.tokenizer)
         else:
-            self.train_dataset = dataset
+            logger.info("Using data collator: LanguageModeling")
+            data_collator = DataCollatorForLanguageModeling(tokenizer=self.tokenizer, mlm=False)
 
-        logger.info("Train dataset:")
-        logger.info(self.train_dataset)
+        train_dataset, eval_dataset = self.prepare_datasets(dataset, do_eval)
 
-    def tune(self, adapter_name, rank=32, lora_alpha=32, lora_dropout=0.1, num_train_epochs=1, batch_size=4, gradient_steps=2):
-        if not self.train_dataset:
-            raise Exception("Dataset is not initialized")
-        evaluation_strategy = "no"
-        eval_steps = None
+        args = self.prepare_args(num_train_epochs, learning_rate, batch_size, gradient_steps)
+        config = TrainingArguments(**args)
+
+        trainer = Trainer(model=peft_model,
+                          train_dataset=train_dataset,
+                          eval_dataset=eval_dataset,
+                          data_collator=data_collator,
+                          args=config)
+        trainer.train()
+        trainer.save_model(adapter_name)
+
+    def dpo(self,
+            dataset,
+            adapter_name,
+            do_eval=False,
+            rank=32,
+            lora_alpha=None,
+            lora_dropout=0.1,
+            num_train_epochs=1,
+            batch_size=4,
+            gradient_steps=2,
+            learning_rate=1e-4):
+        dataset = datasets.load_dataset(dataset, split="train")
+        train_dataset, eval_dataset = self.prepare_datasets(dataset, do_eval)
+
+        args = self.prepare_args(num_train_epochs, learning_rate, batch_size, gradient_steps)
+        config = DPOConfig(**args)
+
+        trainer = DPOTrainer(model=self.load_base_model(),
+                             peft_config=self.get_lora_config(rank, lora_alpha if lora_alpha else rank),
+                             train_dataset=train_dataset,
+                             eval_dataset=eval_dataset,
+                             processing_class=self.tokenizer,
+                             args=config)
+        trainer.train()
+        trainer.save_model(adapter_name)
+
+    def prepare_datasets(self, dataset, do_eval):
         eval_dataset = None
+        self.eval_strategy = "no"
+        self.eval_steps = None
 
-        if self.eval:
-            evaluation_strategy = "steps"
-            eval_steps = 0.1
-            eval_dataset = self.eval_dataset
-
-        logger.info("===================================================")
-        logger.info("AISTrainer hyperparameters:")
-        logger.info(f"fp16: {self.fp16}")
-        logger.info(f"bf16: {self.bf16}")
-        logger.info(f"flash_attentions: {self.attn_implementation}")
-        logger.info(f"batch_size: {batch_size}")
-        logger.info(f"gradient_steps: {gradient_steps}")
-        if self.deepspeed is None:
-            logger.info("deepspeed: disabled")
+        if do_eval:
+            dataset = dataset.train_test_split(test_size=0.1)
+            train_dataset = dataset["train"]
+            eval_dataset = dataset["test"]
+            self.eval_strategy = "steps"
+            self.eval_steps = 0.1
+            logger.info("Eval dataset:")
+            logger.info(eval_dataset)
         else:
-            logger.info("deepspeed: enabled")
-        logger.info(f"lora_rank: {rank}")
-        logger.info(f"lora_alfa: {lora_alpha}")
-        logger.info(f"target_modules: {self.model_config.target_modules}")
+            train_dataset = dataset
+        logger.info("Train dataset:")
+        logger.info(train_dataset)
+
+        return train_dataset, eval_dataset
+
+    def prepare_args(self, num_train_epochs, learning_rate, batch_size, gradient_steps):
+        return {
+            "output_dir": ".",
+            "num_train_epochs": num_train_epochs,
+            "logging_steps": 1,
+            "eval_strategy": self.eval_strategy,
+            "eval_steps": self.eval_steps,
+            "gradient_checkpointing": True,
+            "bf16": self.bf16,
+            "fp16": self.fp16,
+            "optim": "adamw_torch_fused",
+            "weight_decay": 0.001,
+            "learning_rate": learning_rate,
+            "per_device_train_batch_size": batch_size,
+            "per_device_eval_batch_size": batch_size,
+            "gradient_accumulation_steps": gradient_steps,
+            "eval_accumulation_steps": 1,
+            "deepspeed": self.deepspeed
+        }
+
+    def get_lora_config(self, rank, lora_alpha):
+        return LoraConfig(r=rank, lora_alpha=lora_alpha, target_modules=self.model_config.target_modules, lora_dropout=0.1, task_type="CAUSAL_LM")
+
+    def print_cuda_info(self):
         visible_devices = os.environ['CUDA_VISIBLE_DEVICES']
         logger.info(f"visible_devices: {visible_devices}")
         logger.info("---------------------------------------------------")
@@ -134,42 +195,7 @@ class Tuner:
             logger.info("Total GPU Memory: " + str(torch.cuda.get_device_properties(i).total_memory))
             logger.info("Reserved GPU Memory: " + str(torch.cuda.memory_reserved(i)))
             logger.info("Allocated GPU Memory: " + str(torch.cuda.memory_allocated(i)))
-            logger.info("---")
-        logger.info("===================================================")
-
-        args = TrainingArguments(".",
-                                 num_train_epochs=num_train_epochs,
-                                 logging_steps=1,
-                                 eval_strategy=evaluation_strategy,
-                                 eval_steps=eval_steps,
-                                 gradient_checkpointing=True,
-                                 bf16=self.bf16,
-                                 fp16=self.fp16,
-                                 per_device_train_batch_size=batch_size,
-                                 per_device_eval_batch_size=batch_size,
-                                 gradient_accumulation_steps=gradient_steps,
-                                 eval_accumulation_steps=1,
-                                 deepspeed=self.deepspeed)
-
-        # в документации по Cohere Aya указаны параметры r=32, lora_alpha=32
-        lora_config = LoraConfig(r=rank,
-                                 lora_alpha=lora_alpha,
-                                 target_modules=self.model_config.target_modules,
-                                 lora_dropout=lora_dropout,
-                                 task_type="CAUSAL_LM")
-
-        base_model = self.load_base_model()
-        peft_model = get_peft_model(base_model, lora_config)
-        logger.info(peft_model.get_model_status())
-        data_collator = DataCollatorForLanguageModeling(tokenizer=self.tokenizer, mlm=False)
-
-        trainer = Trainer(model=peft_model,
-                          train_dataset=self.train_dataset,
-                          eval_dataset=eval_dataset,
-                          data_collator=data_collator,
-                          args=args)
-        trainer.train()
-        trainer.save_model(adapter_name)
+            logger.info("---------------------------------------------------")
 
     def merge(self, merged_name, first_adapter):
         base_model = self.load_base_model(False)
@@ -187,10 +213,10 @@ class Tuner:
 
     def load_base_model(self, gradient_checkpointing=True):
         self.base_model = AutoModelForCausalLM.from_pretrained(self.base_model_id,
-                                                               use_cache=False,
                                                                torch_dtype=torch.bfloat16,
                                                                attn_implementation=self.attn_implementation,
                                                                device_map=self.device_map)
+        self.base_model.generation_config.cache_implementation = None
         if gradient_checkpointing:
             self.base_model.gradient_checkpointing_enable()
         else:
@@ -198,7 +224,6 @@ class Tuner:
         return self.base_model
 
     def get_deepspeed_config(self):
-        hidden_size = self.model_config.config.hidden_size
         return {
             "zero_force_ds_cpu_optimizer": False,
             "bf16": {"enabled": "auto"},
@@ -209,7 +234,7 @@ class Tuner:
                 "overlap_comm": True,
                 "sub_group_size": 1e9,
                 "reduce_bucket_size": "auto",
-                "stage3_prefetch_bucket_size": int(0.9 * hidden_size * hidden_size),  # auto почему-то не работает
+                "stage3_prefetch_bucket_size": "auto",
                 "stage3_param_persistence_threshold": "auto",
                 "gather_16bit_weights_on_model_save": True
             },
