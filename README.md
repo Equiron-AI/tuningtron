@@ -60,35 +60,46 @@ The following LLM models are supported:
 - Gemma Family
 - Qwen Family
 
-## Finetuning example
+## SFT finetuning example
 ```python
+import os
+os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+
 import logging
 from tuningtron import Tuner
 
 logging.basicConfig(level=logging.INFO)
+os.environ["HF_TOKEN"] = "xxx"
 
-tuner = Tuner("CohereForAI/c4ai-command-r-v01")
+tuner = Tuner("google/gemma-2-9b-it")
+tuner.sft("equiron-ai/translator_sft", "adapter_gemma_sft", rank=64, batch_size=1, gradient_steps=1, learning_rate=1e-4)
+```
 
-tuner.prepare_dataset("equiron-ai/safety",
-                      eval=False,  # use the entire dataset only for training
-                      max_len_percentile=100)  # percentile cutting off the longest lines
+## DPO finetuning example
+```python
+import os
+os.environ["CUDA_VISIBLE_DEVICES"] = "0,1"
+import logging
+from tuningtron import Tuner
 
-tuner.train("safety_adapter",
-            rank=16,
-            lora_alpha=32,
-            batch_size=4,  # suitable for most cases, but should be reduced if there is not enough GPU memory
-            gradient_steps=2)  # suitable for most cases, but should be reduced if there is not enough GPU memory
+logging.basicConfig(level=logging.INFO)
+os.environ["HF_TOKEN"] = "xxx"
+
+tuner = Tuner("./gemma_sft", enable_deepspeed=False)
+tuner.dpo("equiron-ai/translator_dpo", "adapter_gemma_dpo", rank=64, batch_size=1, gradient_steps=1, learning_rate=1e-4)
 ```
 
 ## Combining/merging LoRA adapters
 ```python
+import os
+os.environ["CUDA_VISIBLE_DEVICES"] = "0,1"
 import logging
 from tuningtron import Tuner
 
 logging.basicConfig(level=logging.INFO)
 
-tuner = Tuner("CohereForAI/c4ai-command-r-v01")
-tuner.merge("model_with_safety", "safety_adapter")
+tuner = Tuner("google/gemma-2-9b-it")
+tuner.merge("gemma_sft", "adapter_gemma_sft")
 ```
 
 ## Known issues
