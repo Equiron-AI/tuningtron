@@ -93,9 +93,6 @@ class Tuner:
         if "instruct" in dataset.column_names:
             dataset = dataset.remove_columns(["instruct", "input", "output"])
 
-        peft_model = get_peft_model(self.load_base_model(), self.get_lora_config(rank, lora_alpha if lora_alpha else rank))
-        logger.info(peft_model.get_model_status())
-
         if comp_only:
             logger.info("Using data collator: CompletionOnlyLM")
             data_collator = DataCollatorForCompletionOnlyLM(self.model_config.response_template, tokenizer=self.tokenizer)
@@ -107,6 +104,9 @@ class Tuner:
 
         args = self.prepare_args(num_train_epochs, learning_rate, batch_size, gradient_steps)
         config = TrainingArguments(**args)
+
+        peft_model = get_peft_model(self.load_base_model(), self.get_lora_config(rank, lora_alpha))
+        logger.info(peft_model.get_model_status())
 
         trainer = Trainer(model=peft_model,
                           train_dataset=train_dataset,
@@ -134,7 +134,7 @@ class Tuner:
         config = DPOConfig(**args)
 
         trainer = DPOTrainer(model=self.load_base_model(),
-                             peft_config=self.get_lora_config(rank, lora_alpha if lora_alpha else rank),
+                             peft_config=self.get_lora_config(rank, lora_alpha),
                              train_dataset=train_dataset,
                              eval_dataset=eval_dataset,
                              processing_class=self.tokenizer,
@@ -183,6 +183,7 @@ class Tuner:
         }
 
     def get_lora_config(self, rank, lora_alpha):
+        lora_alpha = lora_alpha if lora_alpha else rank
         return LoraConfig(r=rank, lora_alpha=lora_alpha, target_modules=self.model_config.target_modules, lora_dropout=0.1, task_type="CAUSAL_LM")
 
     def print_cuda_info(self):
