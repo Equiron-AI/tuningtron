@@ -25,6 +25,7 @@ class Tuner:
 
         self.device_map = "auto"
         self.deepspeed = None
+        self.optim = "adamw_8bit"
         self.bf16 = False
         self.fp16 = False
         self.attn_implementation = None
@@ -33,6 +34,7 @@ class Tuner:
                 deepspeed.init_distributed()
                 self.device_map = None
                 self.deepspeed = self.get_deepspeed_config()
+                self.optim = "adamw_torch"
                 logger.info("deepspeed: enabled")
 
             if torch.cuda.get_device_capability()[0] >= 8:
@@ -67,7 +69,7 @@ class Tuner:
             num_train_epochs=1,
             batch_size=4,
             gradient_steps=2,
-            learning_rate=1e-4,
+            learning_rate=1e-5,
             comp_only=False):
         dataset = datasets.load_dataset(dataset, split="train")
         inputs = [self.tokenizer(self.get_instruction(record))["input_ids"] for record in dataset]
@@ -89,9 +91,11 @@ class Tuner:
 
         if "text" in dataset.column_names:
             dataset = dataset.remove_columns(["text"])
+            lr_scheduler_type = "constant"
 
         if "instruct" in dataset.column_names:
             dataset = dataset.remove_columns(["instruct", "input", "output"])
+            lr_scheduler_type = "linear"
 
         if comp_only:
             logger.info("Using data collator: CompletionOnlyLM")
@@ -102,7 +106,7 @@ class Tuner:
 
         train_dataset, eval_dataset = self.prepare_datasets(dataset, do_eval)
 
-        args = self.prepare_args(num_train_epochs, learning_rate, batch_size, gradient_steps)
+        args = self.prepare_args(num_train_epochs, learning_rate, batch_size, gradient_steps, lr_scheduler_type)
         config = TrainingArguments(**args)
 
         peft_model = get_peft_model(self.load_base_model(), self.get_lora_config(rank, lora_alpha))
@@ -126,11 +130,11 @@ class Tuner:
             num_train_epochs=1,
             batch_size=4,
             gradient_steps=2,
-            learning_rate=1e-4):
+            learning_rate=1e-5):
         dataset = datasets.load_dataset(dataset, split="train")
         train_dataset, eval_dataset = self.prepare_datasets(dataset, do_eval)
 
-        args = self.prepare_args(num_train_epochs, learning_rate, batch_size, gradient_steps)
+        args = self.prepare_args(num_train_epochs, learning_rate, batch_size, gradient_steps, "linear")
         config = DPOConfig(**args)
 
         trainer = DPOTrainer(model=self.load_base_model(),
@@ -162,7 +166,7 @@ class Tuner:
 
         return train_dataset, eval_dataset
 
-    def prepare_args(self, num_train_epochs, learning_rate, batch_size, gradient_steps):
+    def prepare_args(self, num_train_epochs, learning_rate, batch_size, gradient_steps, lr_scheduler_type):
         return {
             "output_dir": ".",
             "num_train_epochs": num_train_epochs,
@@ -170,11 +174,13 @@ class Tuner:
             "eval_strategy": self.eval_strategy,
             "eval_steps": self.eval_steps,
             "gradient_checkpointing": True,
+            "save_strategy": "no",
             "bf16": self.bf16,
             "fp16": self.fp16,
-            "optim": "adamw_torch_fused",
+            "optim": self.optim,
             "weight_decay": 0.001,
             "learning_rate": learning_rate,
+            "lr_scheduler_type": lr_scheduler_type,
             "per_device_train_batch_size": batch_size,
             "per_device_eval_batch_size": batch_size,
             "gradient_accumulation_steps": gradient_steps,
