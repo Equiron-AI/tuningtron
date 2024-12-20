@@ -205,7 +205,16 @@ class Tuner:
             logger.info("---------------------------------------------------")
 
     def merge(self, merged_name, first_adapter):
-        base_model = self.load_base_model(False)
+        if self.model_config.config.tie_word_embeddings:
+            base_model = AutoModelForCausalLM.from_pretrained(self.base_model_id, torch_dtype=torch.bfloat16, device_map=self.device_map, tie_word_embeddings=False)
+            untied_model_dir = "./tmp_model"
+            base_model.lm_head.weight.data = base_model.model.embed_tokens.weight.data.clone()
+            base_model.save_pretrained(untied_model_dir)
+            base_model.config.save_pretrained(untied_model_dir)
+            base_model = AutoModelForCausalLM.from_pretrained(untied_model_dir, torch_dtype=torch.bfloat16, device_map=self.device_map)
+        else:
+            base_model = AutoModelForCausalLM.from_pretrained(self.base_model_id, torch_dtype=torch.bfloat16, device_map=self.device_map)
+
         peft_model = PeftModel.from_pretrained(base_model, first_adapter, torch_dtype=torch.bfloat16)
         logger.info(f"Merging adapter: {first_adapter} -> {merged_name}")
         merged_model = peft_model.merge_and_unload()

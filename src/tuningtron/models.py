@@ -10,7 +10,7 @@ class BaseModel:
         self.base_model_id = base_model_id
         self.config = config
         self.tokenizer = AutoTokenizer.from_pretrained(base_model_id, add_bos_token=False)
-        self.target_modules = ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"]
+        self.target_modules = ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj", "lm_head"]
         if self.tokenizer.pad_token:
             logger.info("Pad token: " + self.tokenizer.pad_token)
         else:
