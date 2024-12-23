@@ -91,7 +91,7 @@ class Tuner:
 
         if "text" in dataset.column_names:
             dataset = dataset.remove_columns(["text"])
-            lr_scheduler_type = "constant"
+            lr_scheduler_type = "linear"
 
         if "instruct" in dataset.column_names:
             dataset = dataset.remove_columns(["instruct", "input", "output"])
