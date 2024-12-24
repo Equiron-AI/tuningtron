@@ -181,6 +181,7 @@ class Tuner:
             "weight_decay": 0.001,
             "learning_rate": learning_rate,
             "lr_scheduler_type": lr_scheduler_type,
+            "warmup_ratio": 0.1,
             "per_device_train_batch_size": batch_size,
             "per_device_eval_batch_size": batch_size,
             "gradient_accumulation_steps": gradient_steps,
@@ -190,7 +191,9 @@ class Tuner:
 
     def get_lora_config(self, rank, lora_alpha):
         lora_alpha = lora_alpha if lora_alpha else rank
-        return LoraConfig(r=rank, lora_alpha=lora_alpha, target_modules=self.model_config.target_modules, lora_dropout=0.1, task_type="CAUSAL_LM")
+        config = LoraConfig(r=rank, lora_alpha=lora_alpha, target_modules=self.model_config.target_modules, lora_dropout=0.1, task_type="CAUSAL_LM")
+        print("Lora config:", config)
+        return config
 
     def print_cuda_info(self):
         visible_devices = os.environ['CUDA_VISIBLE_DEVICES']

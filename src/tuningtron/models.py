@@ -39,7 +39,7 @@ class GemmaModel(BaseModel):
         if "text" in record and record["text"]:
             return record["text"].strip()
         chat = [
-            {"role": "user",      "content": record["instruct"].strip() + "\n\n" + record["input"].strip()},
+            {"role": "user",      "content": record["instruct"].strip() + "\n\n\n" + record["input"].strip()},
             {"role": "assistant", "content": record["output"].strip()}
         ]
         return self.tokenizer.apply_chat_template(chat, tokenize=False)
