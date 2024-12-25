@@ -107,6 +107,7 @@ class Tuner:
         train_dataset, eval_dataset = self.prepare_datasets(dataset, do_eval)
 
         args = self.prepare_args(num_train_epochs, learning_rate, batch_size, gradient_steps, lr_scheduler_type)
+        print(args)
         config = TrainingArguments(**args)
 
         peft_model = get_peft_model(self.load_base_model(), self.get_lora_config(rank, lora_alpha))
@@ -135,6 +136,7 @@ class Tuner:
         train_dataset, eval_dataset = self.prepare_datasets(dataset, do_eval)
 
         args = self.prepare_args(num_train_epochs, learning_rate, batch_size, gradient_steps, "linear")
+        print(args)
         config = DPOConfig(**args)
 
         trainer = DPOTrainer(model=self.load_base_model(),
@@ -208,15 +210,7 @@ class Tuner:
             logger.info("---------------------------------------------------")
 
     def merge(self, merged_name, first_adapter):
-        if self.model_config.config.tie_word_embeddings:
-            base_model = AutoModelForCausalLM.from_pretrained(self.base_model_id, torch_dtype=torch.bfloat16, device_map=self.device_map, tie_word_embeddings=False)
-            untied_model_dir = "./tmp_model"
-            base_model.lm_head.weight.data = base_model.model.embed_tokens.weight.data.clone()
-            base_model.save_pretrained(untied_model_dir)
-            base_model.config.save_pretrained(untied_model_dir)
-            base_model = AutoModelForCausalLM.from_pretrained(untied_model_dir, torch_dtype=torch.bfloat16, device_map=self.device_map)
-        else:
-            base_model = AutoModelForCausalLM.from_pretrained(self.base_model_id, torch_dtype=torch.bfloat16, device_map=self.device_map)
+        base_model = self.load_base_model(False)
 
         peft_model = PeftModel.from_pretrained(base_model, first_adapter, torch_dtype=torch.bfloat16)
         logger.info(f"Merging adapter: {first_adapter} -> {merged_name}")
@@ -235,6 +229,7 @@ class Tuner:
                                                                torch_dtype=torch.bfloat16,
                                                                attn_implementation=self.attn_implementation,
                                                                device_map=self.device_map)
+        print(self.base_model)
         self.base_model.generation_config.cache_implementation = None
         if gradient_checkpointing:
             self.base_model.gradient_checkpointing_enable()
