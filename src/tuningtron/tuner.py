@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 
 
 class Tuner:
-    def __init__(self, base_model_id, enable_deepspeed=True):
+    def __init__(self, base_model_id, enable_deepspeed=True, enable_offload_optimizer=True):
         self.print_cuda_info()
 
         self.base_model_id = base_model_id
@@ -33,7 +33,7 @@ class Tuner:
             if enable_deepspeed:
                 deepspeed.init_distributed()
                 self.device_map = None
-                self.deepspeed = self.get_deepspeed_config()
+                self.deepspeed = self.get_deepspeed_config(enable_offload_optimizer)
                 self.optim = "adamw_torch"
                 logger.info("deepspeed: enabled")
 
@@ -237,20 +237,21 @@ class Tuner:
             self.base_model.gradient_checkpointing_disable()
         return self.base_model
 
-    def get_deepspeed_config(self):
-        return {
+    def get_deepspeed_config(self, enable_offload_optimizer=True):
+        cfg = {
             "zero_force_ds_cpu_optimizer": False,
             "bf16": {"enabled": "auto"},
             "zero_optimization": {
                 "stage": 3,
-                "offload_optimizer": {"device": "cpu"},
                 "offload_param": {"device": "cpu"},
                 "overlap_comm": True,
-                "sub_group_size": 1e9,
                 "reduce_bucket_size": "auto",
+                "sub_group_size": 1e9,
+                "stage3_max_live_parameters": 1e9,
+                "stage3_max_reuse_distance": 1e9,
                 "stage3_prefetch_bucket_size": "auto",
                 "stage3_param_persistence_threshold": "auto",
-                "gather_16bit_weights_on_model_save": True
+                "stage3_gather_16bit_weights_on_model_save": True
             },
             "gradient_accumulation_steps": "auto",
             "gradient_clipping": "auto",
@@ -258,3 +259,8 @@ class Tuner:
             "train_batch_size": "auto",
             "train_micro_batch_size_per_gpu": "auto"
         }
+
+        if enable_offload_optimizer:
+            cfg["zero_optimization"]["offload_optimizer"] = {"device": "cpu"}
+
+        return cfg
