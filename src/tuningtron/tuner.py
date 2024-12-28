@@ -63,6 +63,8 @@ class Tuner:
             adapter_name,
             do_eval=False,
             max_len_percentile=100,
+            max_len=None,
+            truncation=False,
             rank=32,
             lora_alpha=None,
             lora_dropout=0.1,
@@ -72,18 +74,24 @@ class Tuner:
             learning_rate=1e-5,
             comp_only=False):
         dataset = datasets.load_dataset(dataset, split="train")
-        inputs = [self.tokenizer(self.get_instruction(record))["input_ids"] for record in dataset]
-        target_lenghts = [len(x) for x in inputs]
-        self.max_len = int(np.percentile(target_lenghts, max_len_percentile))
+
+        if max_len:
+            self.max_len = max_len
+        else:
+            inputs = [self.tokenizer(self.get_instruction(record))["input_ids"] for record in dataset]
+            target_lenghts = [len(x) for x in inputs]
+            self.max_len = int(np.percentile(target_lenghts, max_len_percentile))
 
         logger.info(f"Dataset max_len detected: {self.max_len}")
         logger.info("Dataset example row after appy chat template:")
         logger.info("---------------------------------------------")
         logger.info(self.get_instruction(dataset[0]))
         logger.info("---------------------------------------------")
-        print("DS before filtering:", dataset)
-        dataset = dataset.filter(lambda record: self.filter_func(record))
-        print("DS after filtering:", dataset)
+        if not truncation:
+            print("DS before max_len filtering:", dataset)
+            dataset = dataset.filter(lambda record: self.filter_func(record))
+            print("DS after max_len filtering:", dataset)
+
         dataset = dataset.map(self.map_func)
         print("DS after mapping:", dataset)
         logger.info(dataset["input_ids"][0])
