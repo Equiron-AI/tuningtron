@@ -16,12 +16,15 @@ logger = logging.getLogger(__name__)
 
 
 class Tuner:
-    def __init__(self, base_model_id, enable_deepspeed=True, enable_offload_optimizer=True):
+    def __init__(self, base_model_id, enable_deepspeed=True, enable_offload_optimizer=True, target_modules=None):
         self.print_cuda_info()
 
         self.base_model_id = base_model_id
         self.model_config = ModelsFactory().get_model_config(base_model_id)
         self.tokenizer = self.model_config.tokenizer
+
+        if target_modules:
+            self.model_config.target_modules = target_modules
 
         self.device_map = "auto"
         self.deepspeed = None
@@ -65,13 +68,14 @@ class Tuner:
             max_len_percentile=100,
             max_len=None,
             truncation=False,
-            rank=32,
+            rank=8,
             lora_alpha=None,
             lora_dropout=0.1,
             num_train_epochs=1,
-            batch_size=4,
-            gradient_steps=2,
+            batch_size=1,
+            gradient_steps=1,
             learning_rate=1e-5,
+            lr_scheduler_type="linear",
             comp_only=False):
         dataset = datasets.load_dataset(dataset, split="train")
 
@@ -99,11 +103,9 @@ class Tuner:
 
         if "text" in dataset.column_names:
             dataset = dataset.remove_columns(["text"])
-            lr_scheduler_type = "linear"
 
         if "instruct" in dataset.column_names:
             dataset = dataset.remove_columns(["instruct", "input", "output"])
-            lr_scheduler_type = "linear"
 
         if comp_only:
             logger.info("Using data collator: CompletionOnlyLM")
@@ -133,12 +135,12 @@ class Tuner:
             dataset,
             adapter_name,
             do_eval=False,
-            rank=32,
+            rank=8,
             lora_alpha=None,
             lora_dropout=0.1,
             num_train_epochs=1,
-            batch_size=4,
-            gradient_steps=2,
+            batch_size=1,
+            gradient_steps=1,
             learning_rate=1e-5):
         dataset = datasets.load_dataset(dataset, split="train")
         train_dataset, eval_dataset = self.prepare_datasets(dataset, do_eval)

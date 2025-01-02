@@ -33,7 +33,7 @@ class BaseModel:
 class GemmaModel(BaseModel):
     def __init__(self, base_model_id, config):
         BaseModel.__init__(self, base_model_id, config)
-        self.target_modules = ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"]
+        self.target_modules = ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj", "lm_head"]
         self.response_template = "<start_of_turn>model"
 
     def apply_chat_template(self, record):
