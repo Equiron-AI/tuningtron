@@ -75,7 +75,6 @@ class Tuner:
             batch_size=1,
             gradient_steps=1,
             learning_rate=1e-5,
-            lr_scheduler_type="linear",
             comp_only=False):
         dataset = datasets.load_dataset(dataset, split="train")
 
@@ -116,7 +115,7 @@ class Tuner:
 
         train_dataset, eval_dataset = self.prepare_datasets(dataset, do_eval)
 
-        args = self.prepare_args(num_train_epochs, learning_rate, batch_size, gradient_steps, lr_scheduler_type)
+        args = self.prepare_args(num_train_epochs, learning_rate, batch_size, gradient_steps)
         print(args)
         config = TrainingArguments(**args)
 
@@ -178,7 +177,7 @@ class Tuner:
 
         return train_dataset, eval_dataset
 
-    def prepare_args(self, num_train_epochs, learning_rate, batch_size, gradient_steps, lr_scheduler_type):
+    def prepare_args(self, num_train_epochs, learning_rate, batch_size, gradient_steps):
         return {
             "output_dir": ".",
             "num_train_epochs": num_train_epochs,
@@ -192,7 +191,6 @@ class Tuner:
             "optim": self.optim,
             "weight_decay": 0.001,
             "learning_rate": learning_rate,
-            "lr_scheduler_type": lr_scheduler_type,
             "warmup_ratio": 0.1,
             "per_device_train_batch_size": batch_size,
             "per_device_eval_batch_size": batch_size,
