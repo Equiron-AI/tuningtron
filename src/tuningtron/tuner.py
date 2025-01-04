@@ -144,7 +144,7 @@ class Tuner:
         dataset = datasets.load_dataset(dataset, split="train")
         train_dataset, eval_dataset = self.prepare_datasets(dataset, do_eval)
 
-        args = self.prepare_args(num_train_epochs, learning_rate, batch_size, gradient_steps, "linear")
+        args = self.prepare_args(num_train_epochs, learning_rate, batch_size, gradient_steps)
         print(args)
         config = DPOConfig(**args)
 
