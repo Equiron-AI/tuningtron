@@ -37,7 +37,8 @@ class Tuner:
                 deepspeed.init_distributed()
                 self.device_map = None
                 self.deepspeed = self.get_deepspeed_config(enable_offload_optimizer)
-                self.optim = "adamw_torch"
+                if enable_offload_optimizer:
+                    self.optim = "adamw_torch"
                 logger.info("deepspeed: enabled")
 
             if torch.cuda.get_device_capability()[0] >= 8:
