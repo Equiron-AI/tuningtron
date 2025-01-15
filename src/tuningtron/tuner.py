@@ -43,10 +43,8 @@ class Tuner:
 
             if torch.cuda.get_device_capability()[0] >= 8:
                 self.bf16 = True
-                if self.model_config.config.model_type.startswith("gemma"):
-                    self.attn_implementation = "eager"
-                else:
-                    self.attn_implementation = "flash_attention_2"
+                # if not self.model_config.config.model_type.startswith("gemma"):
+                self.attn_implementation = "flash_attention_2"
             else:
                 self.fp16 = True
         else:
@@ -239,7 +237,7 @@ class Tuner:
                                                                attn_implementation=self.attn_implementation,
                                                                device_map=self.device_map)
         print(self.base_model)
-        self.base_model.generation_config.cache_implementation = None
+        # self.base_model.generation_config.cache_implementation = None
         if gradient_checkpointing:
             self.base_model.gradient_checkpointing_enable()
         else:
