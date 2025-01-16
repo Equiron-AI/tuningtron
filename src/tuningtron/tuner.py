@@ -43,8 +43,9 @@ class Tuner:
 
             if torch.cuda.get_device_capability()[0] >= 8:
                 self.bf16 = True
-                # if not self.model_config.config.model_type.startswith("gemma"):
                 self.attn_implementation = "flash_attention_2"
+                if self.model_config.config.model_type.startswith("gemma"):
+                    self.attn_implementation = "eager"
             else:
                 self.fp16 = True
         else:
@@ -89,6 +90,7 @@ class Tuner:
         logger.info("---------------------------------------------")
         logger.info(self.get_instruction(dataset[0]))
         logger.info("---------------------------------------------")
+
         if not truncation:
             print("DS before max_len filtering:", dataset)
             dataset = dataset.filter(lambda record: self.filter_func(record))
@@ -96,6 +98,8 @@ class Tuner:
 
         dataset = dataset.map(self.map_func)
         print("DS after mapping:", dataset)
+        logger.info("---------------------------------------------")
+        logger.info("Dataset example row after tokenize:")
         logger.info(dataset["input_ids"][0])
         logger.info("---------------------------------------------")
 
@@ -115,8 +119,8 @@ class Tuner:
         train_dataset, eval_dataset = self.prepare_datasets(dataset, do_eval)
 
         args = self.prepare_args(num_train_epochs, learning_rate, batch_size, gradient_steps)
-        print(args)
         config = TrainingArguments(**args)
+        print(config)
 
         peft_model = get_peft_model(self.load_base_model(), self.get_lora_config(rank, lora_alpha))
         logger.info(peft_model.get_model_status())
@@ -141,11 +145,24 @@ class Tuner:
             gradient_steps=1,
             learning_rate=1e-5):
         dataset = datasets.load_dataset(dataset, split="train")
+
         train_dataset, eval_dataset = self.prepare_datasets(dataset, do_eval)
 
+        logger.info("Dataset example row after appy chat template:")
+        logger.info("Chosen ------>")
+        logger.info(self.tokenizer.apply_chat_template(train_dataset["chosen"][0], tokenize=False))
+        logger.info("Rejected ------>")
+        logger.info(self.tokenizer.apply_chat_template(train_dataset["rejected"][0], tokenize=False))
+        logger.info("---------------------------------------------")
+        logger.info("Dataset example row after tokenize:")
+        logger.info("Chosen ------>")
+        logger.info(self.tokenizer.apply_chat_template(train_dataset["chosen"][0]))
+        logger.info("Rejected ------>")
+        logger.info(self.tokenizer.apply_chat_template(train_dataset["rejected"][0]))
+
         args = self.prepare_args(num_train_epochs, learning_rate, batch_size, gradient_steps)
-        print(args)
         config = DPOConfig(**args)
+        print(config)
 
         trainer = DPOTrainer(model=self.load_base_model(),
                              peft_config=self.get_lora_config(rank, lora_alpha),
