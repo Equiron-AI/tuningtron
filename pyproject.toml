@@ -24,7 +24,7 @@ dependencies = [
   "deepspeed==0.15.4",
   "sentencepiece>=0.2.0",
   "trl>=0.12.2",
-  "bitsandbytes>=0.45.0"
+  "bitsandbytes>=0.45.0",
 ]
 
 [project.urls]
