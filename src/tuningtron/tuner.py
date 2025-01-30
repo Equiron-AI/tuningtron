@@ -65,6 +65,57 @@ class Tuner:
     def filter_func(self, record):
         return len(self.tokenizer(self.get_instruction(record))["input_ids"]) <= self.max_len
 
+    def cpt_full(self,
+                 dataset,
+                 adapter_name,
+                 do_eval=False,
+                 max_len=None,
+                 num_train_epochs=1,
+                 batch_size=1,
+                 gradient_steps=1,
+                 learning_rate=1e-5,
+                 embedding_learning_rate=None):
+        dataset = datasets.load_dataset(dataset, split="train")
+
+        if max_len:
+            self.max_len = max_len
+        else:
+            inputs = [self.tokenizer(self.get_instruction(record))["input_ids"] for record in dataset]
+            self.max_len = max([len(x) for x in inputs])
+            logger.info(f"Dataset max_len detected: {self.max_len}")
+
+        logger.info("DS before mapping:")
+        logger.info(str(dataset))
+
+        dataset = dataset.map(self.map_func)
+
+        logger.info("DS after mapping:")
+        logger.info(str(dataset))
+
+        self.print_ds_example_row(dataset)
+
+        dataset = dataset.remove_columns(["text"])
+
+        train_dataset, eval_dataset = self.prepare_datasets(dataset, do_eval)
+
+        args_dict = self.prepare_args(num_train_epochs, learning_rate, batch_size, gradient_steps)
+
+        if embedding_learning_rate:
+            args_dict["embedding_learning_rate"] = embedding_learning_rate
+        else:
+            args_dict["embedding_learning_rate"] = learning_rate / 10.0  # Select a 2 to 10x smaller learning rate for the embedding matrices!
+
+        args = TuningtronTrainingArguments(**args_dict)
+        logger.info(str(args))
+
+        trainer = TuningtronTrainer(model=self.load_base_model(),
+                                    train_dataset=train_dataset,
+                                    eval_dataset=eval_dataset,
+                                    data_collator=DataCollatorForLanguageModeling(tokenizer=self.tokenizer, mlm=False),
+                                    args=args)
+        trainer.train()
+        trainer.save_model(adapter_name)
+
     def cpt(self,
             dataset,
             adapter_name,
@@ -84,13 +135,14 @@ class Tuner:
         else:
             inputs = [self.tokenizer(self.get_instruction(record))["input_ids"] for record in dataset]
             self.max_len = max([len(x) for x in inputs])
+            logger.info(f"Dataset max_len detected: {self.max_len}")
 
         logger.info("DS before mapping:")
         logger.info(str(dataset))
 
         dataset = dataset.map(self.map_func)
 
-        logger.info("DS after mapping and filtering:")
+        logger.info("DS after mapping:")
         logger.info(str(dataset))
 
         self.print_ds_example_row(dataset)
@@ -104,7 +156,7 @@ class Tuner:
         if embedding_learning_rate:
             args_dict["embedding_learning_rate"] = embedding_learning_rate
         else:
-            args_dict["embedding_learning_rate"] = learning_rate / 5.0  # Select a 2 to 10x smaller learning rate for the embedding matrices!
+            args_dict["embedding_learning_rate"] = learning_rate / 10.0  # Select a 2 to 10x smaller learning rate for the embedding matrices!
 
         args = TuningtronTrainingArguments(**args_dict)
         logger.info(str(args))
