@@ -67,7 +67,7 @@ class Tuner:
 
     def cpt_full(self,
                  dataset,
-                 adapter_name,
+                 model_name,
                  do_eval=False,
                  max_len=None,
                  num_train_epochs=1,
@@ -106,7 +106,14 @@ class Tuner:
                           data_collator=DataCollatorForLanguageModeling(tokenizer=self.tokenizer, mlm=False),
                           args=args)
         trainer.train()
-        trainer.save_model(adapter_name)
+        trainer.save_model(model_name)
+
+        tmp_tokenizer = AutoTokenizer.from_pretrained(self.base_model_id)
+        tmp_tokenizer.save_pretrained(model_name)
+        try:
+            tmp_tokenizer.save_vocabulary(model_name)
+        except:
+            pass
 
     def cpt(self,
             dataset,
