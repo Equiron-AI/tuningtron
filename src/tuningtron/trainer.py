@@ -20,7 +20,7 @@ def _create_tuningtron_optimizer(model,
     for name, param in model.named_parameters():
         if not param.requires_grad:
             continue
-        if "lm_head" in name:
+        if ("lm_head" in name) or ("embed_tokens" in name):
             print(f"Tuningtron: Setting lr = {embedding_lr:.2e} instead of {lr:.2e} for {name}.")
             param_groups["embeddings"][name] = param
         else:
