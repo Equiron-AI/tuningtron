@@ -75,6 +75,7 @@ class Tuner:
                  gradient_steps=1,
                  learning_rate=1e-5,
                  embedding_learning_rate=None):
+        self.tokenizer.add_eos_token = True
         dataset = datasets.load_dataset(dataset, split="train")
 
         if max_len:
@@ -98,7 +99,7 @@ class Tuner:
 
         train_dataset, eval_dataset = self.prepare_datasets(dataset, do_eval)
 
-        args_dict = self.prepare_args(num_train_epochs, learning_rate, batch_size, gradient_steps)
+        args_dict = self.prepare_args(num_train_epochs, learning_rate, batch_size, gradient_steps, "cosine")
 
         if embedding_learning_rate:
             args_dict["embedding_learning_rate"] = embedding_learning_rate
@@ -135,6 +136,7 @@ class Tuner:
             gradient_steps=1,
             learning_rate=1e-5,
             embedding_learning_rate=None):
+        self.tokenizer.add_eos_token = True
         dataset = datasets.load_dataset(dataset, split="train")
 
         if max_len:
@@ -296,7 +298,7 @@ class Tuner:
         logger.info(str(dataset["input_ids"][0]))
         logger.info("---------------------------------------------")
 
-    def prepare_args(self, num_train_epochs, learning_rate, batch_size, gradient_steps):
+    def prepare_args(self, num_train_epochs, learning_rate, batch_size, gradient_steps, lr_scheduler_type="linear"):
         return {
             "output_dir": ".",
             "num_train_epochs": num_train_epochs,
@@ -311,7 +313,7 @@ class Tuner:
             "optim": self.optim,
             "weight_decay": 0.001,
             "learning_rate": learning_rate,
-            # embedding_learning_rate = 1e-5, # Select a 2 to 10x smaller learning rate for the embedding matrices!
+            "lr_scheduler_type": lr_scheduler_type,
             "warmup_ratio": 0.1,
             "per_device_train_batch_size": batch_size,
             "per_device_eval_batch_size": batch_size,
