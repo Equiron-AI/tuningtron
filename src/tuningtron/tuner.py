@@ -73,7 +73,8 @@ class Tuner:
                  num_train_epochs=1,
                  batch_size=1,
                  gradient_steps=1,
-                 learning_rate=1e-5):
+                 learning_rate=1e-5,
+                 embedding_learning_rate=None):
         dataset = datasets.load_dataset(dataset, split="train")
 
         if max_len:
@@ -97,14 +98,21 @@ class Tuner:
 
         train_dataset, eval_dataset = self.prepare_datasets(dataset, do_eval)
 
-        args = TrainingArguments(**self.prepare_args(num_train_epochs, learning_rate, batch_size, gradient_steps))
+        args_dict = self.prepare_args(num_train_epochs, learning_rate, batch_size, gradient_steps)
+
+        if embedding_learning_rate:
+            args_dict["embedding_learning_rate"] = embedding_learning_rate
+        else:
+            args_dict["embedding_learning_rate"] = learning_rate / 10.0  # Select a 2 to 10x smaller learning rate for the embedding matrices!
+
+        args = TuningtronTrainingArguments(**args_dict)
         logger.info(str(args))
 
-        trainer = Trainer(model=self.load_base_model(),
-                          train_dataset=train_dataset,
-                          eval_dataset=eval_dataset,
-                          data_collator=DataCollatorForLanguageModeling(tokenizer=self.tokenizer, mlm=False),
-                          args=args)
+        trainer = TuningtronTrainer(model=self.load_base_model(),
+                                    train_dataset=train_dataset,
+                                    eval_dataset=eval_dataset,
+                                    data_collator=DataCollatorForLanguageModeling(tokenizer=self.tokenizer, mlm=False),
+                                    args=args)
         trainer.train()
         trainer.save_model(model_name)
 
