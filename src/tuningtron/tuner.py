@@ -71,8 +71,8 @@ class Tuner:
                  do_eval=False,
                  max_len=None,
                  num_train_epochs=1,
-                 batch_size=1,
-                 gradient_steps=1,
+                 backpropagation_batch_size=1,
+                 gradient_accum_steps=1,
                  learning_rate=1e-5,
                  embedding_learning_rate=None):
         self.tokenizer.add_eos_token = True
@@ -99,7 +99,7 @@ class Tuner:
 
         train_dataset, eval_dataset = self.prepare_datasets(dataset, do_eval)
 
-        args_dict = self.prepare_args(num_train_epochs, learning_rate, batch_size, gradient_steps, "cosine")
+        args_dict = self.prepare_args(num_train_epochs, learning_rate, backpropagation_batch_size, gradient_accum_steps, "cosine")
 
         if embedding_learning_rate:
             args_dict["embedding_learning_rate"] = embedding_learning_rate
@@ -132,8 +132,8 @@ class Tuner:
             rank=512,
             lora_alpha=None,
             num_train_epochs=1,
-            batch_size=1,
-            gradient_steps=1,
+            backpropagation_batch_size=1,
+            gradient_accum_steps=1,
             learning_rate=1e-5,
             embedding_learning_rate=None):
         self.tokenizer.add_eos_token = True
@@ -160,7 +160,7 @@ class Tuner:
 
         train_dataset, eval_dataset = self.prepare_datasets(dataset, do_eval)
 
-        args_dict = self.prepare_args(num_train_epochs, learning_rate, batch_size, gradient_steps)
+        args_dict = self.prepare_args(num_train_epochs, learning_rate, backpropagation_batch_size, gradient_accum_steps)
 
         if embedding_learning_rate:
             args_dict["embedding_learning_rate"] = embedding_learning_rate
@@ -186,11 +186,11 @@ class Tuner:
             adapter_name,
             do_eval=False,
             max_len_percentile=100,
-            rank=8,
+            lora_rank=8,
             lora_alpha=None,
             num_train_epochs=1,
-            batch_size=1,
-            gradient_steps=1,
+            backpropagation_batch_size=1,
+            gradient_accum_steps=1,
             learning_rate=1e-5):
         dataset = datasets.load_dataset(dataset, split="train")
 
@@ -214,10 +214,10 @@ class Tuner:
 
         train_dataset, eval_dataset = self.prepare_datasets(dataset, do_eval)
 
-        args = TrainingArguments(**self.prepare_args(num_train_epochs, learning_rate, batch_size, gradient_steps))
+        args = TrainingArguments(**self.prepare_args(num_train_epochs, learning_rate, backpropagation_batch_size, gradient_accum_steps))
         logger.info(str(args))
 
-        peft_model = get_peft_model(self.load_base_model(), self.get_lora_config(rank, lora_alpha))
+        peft_model = get_peft_model(self.load_base_model(), self.get_lora_config(lora_rank, lora_alpha))
         logger.info(str(peft_model.get_model_status()))
 
         trainer = Trainer(model=peft_model,
@@ -232,11 +232,11 @@ class Tuner:
             dataset,
             adapter_name,
             do_eval=False,
-            rank=8,
+            lora_rank=8,
             lora_alpha=None,
             num_train_epochs=1,
-            batch_size=1,
-            gradient_steps=1,
+            backpropagation_batch_size=1,
+            gradient_accum_steps=1,
             learning_rate=1e-5):
         dataset = datasets.load_dataset(dataset, split="train")
 
@@ -254,10 +254,10 @@ class Tuner:
         logger.info("Rejected ------>")
         logger.info(self.tokenizer.apply_chat_template(train_dataset["rejected"][0]))
 
-        args = DPOConfig(**self.prepare_args(num_train_epochs, learning_rate, batch_size, gradient_steps))
+        args = DPOConfig(**self.prepare_args(num_train_epochs, learning_rate, backpropagation_batch_size, gradient_accum_steps))
         logger.info(args)
 
-        peft_model = get_peft_model(self.load_base_model(), self.get_lora_config(rank, lora_alpha))
+        peft_model = get_peft_model(self.load_base_model(), self.get_lora_config(lora_rank, lora_alpha))
         logger.info(peft_model.get_model_status())
 
         trainer = DPOTrainer(model=peft_model,
@@ -298,7 +298,7 @@ class Tuner:
         logger.info(str(dataset["input_ids"][0]))
         logger.info("---------------------------------------------")
 
-    def prepare_args(self, num_train_epochs, learning_rate, batch_size, gradient_steps, lr_scheduler_type="linear"):
+    def prepare_args(self, num_train_epochs, learning_rate, batch_size, gradient_accum_steps, lr_scheduler_type="linear"):
         return {
             "output_dir": ".",
             "num_train_epochs": num_train_epochs,
@@ -317,7 +317,7 @@ class Tuner:
             "warmup_ratio": 0.1,
             "per_device_train_batch_size": batch_size,
             "per_device_eval_batch_size": batch_size,
-            "gradient_accumulation_steps": gradient_steps,
+            "gradient_accumulation_steps": gradient_accum_steps,
             "eval_accumulation_steps": 1,
             "deepspeed": self.deepspeed
         }
