@@ -75,7 +75,6 @@ class Tuner:
                  gradient_accum_steps=1,
                  learning_rate=1e-5,
                  embedding_learning_rate=None):
-        self.tokenizer.add_eos_token = True
         dataset = datasets.load_dataset(dataset, split="train")
 
         if max_len:
@@ -136,7 +135,6 @@ class Tuner:
             gradient_accum_steps=1,
             learning_rate=1e-5,
             embedding_learning_rate=None):
-        self.tokenizer.add_eos_token = True
         dataset = datasets.load_dataset(dataset, split="train")
 
         if max_len:
