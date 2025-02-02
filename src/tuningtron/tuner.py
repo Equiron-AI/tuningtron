@@ -6,7 +6,6 @@ import torch
 import numpy as np
 import logging
 import deepspeed
-from tuningtron.trainer import TuningtronTrainingArguments, TuningtronTrainer
 from transformers import AutoModelForCausalLM, TrainingArguments, Trainer, DataCollatorForLanguageModeling, AutoTokenizer
 from trl import DPOConfig, DPOTrainer
 from peft import LoraConfig, get_peft_model, PeftModel
@@ -56,128 +55,14 @@ class Tuner:
             else:
                 self.fp16 = True
 
-    def get_instruction(self, record):
+    def apply_template(self, record):
         return self.model_config.apply_chat_template(record)
 
     def map_func(self, record):
-        return self.tokenizer(self.get_instruction(record), truncation=True, max_length=self.max_len, padding="max_length")
+        return self.tokenizer(self.apply_template(record), truncation=True, max_length=self.max_len, padding="max_length")
 
     def filter_func(self, record):
-        return len(self.tokenizer(self.get_instruction(record))["input_ids"]) <= self.max_len
-
-    def cpt_full(self,
-                 dataset,
-                 model_name,
-                 do_eval=False,
-                 max_len=None,
-                 num_train_epochs=1,
-                 backpropagation_batch_size=1,
-                 gradient_accum_steps=1,
-                 learning_rate=1e-5,
-                 embedding_learning_rate=None):
-        dataset = datasets.load_dataset(dataset, split="train")
-
-        if max_len:
-            self.max_len = max_len
-        else:
-            inputs = [self.tokenizer(self.get_instruction(record))["input_ids"] for record in dataset]
-            self.max_len = max([len(x) for x in inputs])
-            logger.info(f"Dataset max_len detected: {self.max_len}")
-
-        logger.info("DS before mapping:")
-        logger.info(str(dataset))
-
-        dataset = dataset.map(self.map_func)
-
-        logger.info("DS after mapping:")
-        logger.info(str(dataset))
-
-        self.print_ds_example_row(dataset)
-
-        dataset = dataset.remove_columns(["text"])
-
-        train_dataset, eval_dataset = self.prepare_datasets(dataset, do_eval)
-
-        args_dict = self.prepare_args(num_train_epochs, learning_rate, backpropagation_batch_size, gradient_accum_steps, "cosine")
-
-        if embedding_learning_rate:
-            args_dict["embedding_learning_rate"] = embedding_learning_rate
-        else:
-            args_dict["embedding_learning_rate"] = learning_rate / 10.0  # Select a 2 to 10x smaller learning rate for the embedding matrices!
-
-        args = TuningtronTrainingArguments(**args_dict)
-        logger.info(str(args))
-
-        trainer = TuningtronTrainer(model=self.load_base_model(),
-                                    train_dataset=train_dataset,
-                                    eval_dataset=eval_dataset,
-                                    data_collator=DataCollatorForLanguageModeling(tokenizer=self.tokenizer, mlm=False),
-                                    args=args)
-        trainer.train()
-        trainer.save_model(model_name)
-
-        tmp_tokenizer = AutoTokenizer.from_pretrained(self.base_model_id)
-        tmp_tokenizer.save_pretrained(model_name)
-        try:
-            tmp_tokenizer.save_vocabulary(model_name)
-        except:
-            pass
-
-    def cpt(self,
-            dataset,
-            adapter_name,
-            do_eval=False,
-            max_len=None,
-            rank=512,
-            lora_alpha=None,
-            num_train_epochs=1,
-            backpropagation_batch_size=1,
-            gradient_accum_steps=1,
-            learning_rate=1e-5,
-            embedding_learning_rate=None):
-        dataset = datasets.load_dataset(dataset, split="train")
-
-        if max_len:
-            self.max_len = max_len
-        else:
-            inputs = [self.tokenizer(self.get_instruction(record))["input_ids"] for record in dataset]
-            self.max_len = max([len(x) for x in inputs])
-            logger.info(f"Dataset max_len detected: {self.max_len}")
-
-        logger.info("DS before mapping:")
-        logger.info(str(dataset))
-
-        dataset = dataset.map(self.map_func)
-
-        logger.info("DS after mapping:")
-        logger.info(str(dataset))
-
-        self.print_ds_example_row(dataset)
-
-        dataset = dataset.remove_columns(["text"])
-
-        train_dataset, eval_dataset = self.prepare_datasets(dataset, do_eval)
-
-        args_dict = self.prepare_args(num_train_epochs, learning_rate, backpropagation_batch_size, gradient_accum_steps)
-
-        if embedding_learning_rate:
-            args_dict["embedding_learning_rate"] = embedding_learning_rate
-        else:
-            args_dict["embedding_learning_rate"] = learning_rate / 10.0  # Select a 2 to 10x smaller learning rate for the embedding matrices!
-
-        args = TuningtronTrainingArguments(**args_dict)
-        logger.info(str(args))
-
-        peft_model = get_peft_model(self.load_base_model(), self.get_lora_config(rank, lora_alpha, rslora=True))
-        logger.info(str(peft_model.get_model_status()))
-
-        trainer = TuningtronTrainer(model=peft_model,
-                                    train_dataset=train_dataset,
-                                    eval_dataset=eval_dataset,
-                                    data_collator=DataCollatorForLanguageModeling(tokenizer=self.tokenizer, mlm=False),
-                                    args=args)
-        trainer.train()
-        trainer.save_model(adapter_name)
+        return len(self.tokenizer(self.apply_template(record))["input_ids"]) <= self.max_len
 
     def sft(self,
             dataset,
@@ -192,7 +77,7 @@ class Tuner:
             learning_rate=1e-5):
         dataset = datasets.load_dataset(dataset, split="train")
 
-        inputs = [self.tokenizer(self.get_instruction(record))["input_ids"] for record in dataset]
+        inputs = [self.tokenizer(self.apply_template(record))["input_ids"] for record in dataset]
         target_lenghts = [len(x) for x in inputs]
         self.max_len = int(np.percentile(target_lenghts, max_len_percentile))
         logger.info(f"Dataset max_len detected: {self.max_len}")
@@ -287,13 +172,14 @@ class Tuner:
         return train_dataset, eval_dataset
 
     def print_ds_example_row(self, dataset):
-        logger.info("Dataset example row after appy chat template:")
+        tokens = dataset["input_ids"][0]
+        logger.info("Dataset text row:")
         logger.info("---------------------------------------------")
-        logger.info(str(self.get_instruction(dataset[0])))
+        logger.info(self.tokenizer.decode(tokens))
         logger.info("---------------------------------------------")
-        logger.info("Dataset example row after tokenize:")
+        logger.info("Dataset tokens row:")
         logger.info("---------------------------------------------")
-        logger.info(str(dataset["input_ids"][0]))
+        logger.info(str(tokens))
         logger.info("---------------------------------------------")
 
     def prepare_args(self, num_train_epochs, learning_rate, batch_size, gradient_accum_steps, lr_scheduler_type="linear"):

@@ -9,7 +9,7 @@ class BaseModel:
     def __init__(self, base_model_id, config):
         self.base_model_id = base_model_id
         self.config = config
-        self.tokenizer = AutoTokenizer.from_pretrained(base_model_id, add_bos_token=False)
+        self.tokenizer = AutoTokenizer.from_pretrained(base_model_id)
         self.target_modules = ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj", "lm_head"]
         if self.tokenizer.pad_token:
             logger.info("Pad token: " + self.tokenizer.pad_token)
@@ -26,55 +26,50 @@ class BaseModel:
         else:
             logging.warn("Eos token not found")
 
-    def apply_chat_template(self, record):
+    def prepare_chat_template(self, record):
         pass
+
+    def apply_chat_template(self, record):
+        chat = self.prepare_chat_template(record)
+        text = self.tokenizer.apply_chat_template(chat, tokenize=False)
+        if self.tokenizer.bos_token:
+            text = text.replace(self.tokenizer.bos_token, "")
+        return text
 
 
 class GemmaModel(BaseModel):
     def __init__(self, base_model_id, config):
         BaseModel.__init__(self, base_model_id, config)
-        self.response_template = "<start_of_turn>model"
 
-    def apply_chat_template(self, record):
-        if "text" in record and record["text"]:
-            return record["text"].strip()
-        chat = [
+    def prepare_chat_template(self, record):
+        return [
             {"role": "user",      "content": record["instruct"].strip() + "\n\n\n" + record["input"].strip()},
             {"role": "assistant", "content": record["output"].strip()}
         ]
-        return self.tokenizer.apply_chat_template(chat, tokenize=False)
 
 
 class CohereModel(BaseModel):
     def __init__(self, base_model_id, config):
         BaseModel.__init__(self, base_model_id, config)
-        self.response_template = "<|CHATBOT_TOKEN|>"
 
-    def apply_chat_template(self, record):
-        if "text" in record and record["text"]:
-            return record["text"].strip()
-        chat = [
+    def prepare_chat_template(self, record):
+        return [
             {"role": "system",    "content": record["instruct"].strip()},
             {"role": "user",      "content": record["input"].strip()},
             {"role": "assistant", "content": record["output"].strip()}
         ]
-        return self.tokenizer.apply_chat_template(chat, tokenize=False)
 
 
 class QwenModel(BaseModel):
     def __init__(self, base_model_id, config):
         BaseModel.__init__(self, base_model_id, config)
-        self.response_template = "<|im_start|>assistant"
 
-    def apply_chat_template(self, record):
-        if "text" in record and record["text"]:
-            return record["text"].strip()
-        chat = [
+    def prepare_chat_template(self, record):
+        return [
             {"role": "system",    "content": record["instruct"].strip()},
             {"role": "user",      "content": record["input"].strip()},
             {"role": "assistant", "content": record["output"].strip()}
         ]
-        return self.tokenizer.apply_chat_template(chat, tokenize=False)
 
 
 class ModelsFactory:
