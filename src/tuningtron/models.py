@@ -14,7 +14,8 @@ class BaseModel:
         if self.tokenizer.pad_token:
             logger.info("Pad token: " + self.tokenizer.pad_token)
         else:
-            logging.warn("Pad token not found")
+            self.tokenizer.pad_token = self.tokenizer.eos_token
+            logging.warn("Pad token not found, setting this to eos token")
 
         if self.tokenizer.bos_token:
             logger.info("Bos token: " + self.tokenizer.bos_token)
@@ -26,8 +27,18 @@ class BaseModel:
         else:
             logging.warn("Eos token not found")
 
+        logger.info("Padding size: " + self.tokenizer.padding_side)
+
     def prepare_chat_template(self, record):
-        pass
+        messages = []
+
+        if record["instruct"].strip():
+            messages.append({"role": "system", "content": record["instruct"].strip()})
+
+        messages.append({"role": "user", "content": record["input"].strip()})
+        messages.append({"role": "assistant", "content": record["output"].strip()})
+
+        return messages
 
     def apply_chat_template(self, record):
         chat = self.prepare_chat_template(record)
@@ -42,8 +53,13 @@ class GemmaModel(BaseModel):
         BaseModel.__init__(self, base_model_id, config)
 
     def prepare_chat_template(self, record):
+        if record["instruct"].strip():
+            instruct = record["instruct"].strip() + "\n\n\n"
+        else:
+            instruct = ""
+
         return [
-            {"role": "user",      "content": record["instruct"].strip() + "\n\n\n" + record["input"].strip()},
+            {"role": "user",      "content": instruct + record["input"].strip()},
             {"role": "assistant", "content": record["output"].strip()}
         ]
 
@@ -52,24 +68,42 @@ class CohereModel(BaseModel):
     def __init__(self, base_model_id, config):
         BaseModel.__init__(self, base_model_id, config)
 
-    def prepare_chat_template(self, record):
-        return [
-            {"role": "system",    "content": record["instruct"].strip()},
-            {"role": "user",      "content": record["input"].strip()},
-            {"role": "assistant", "content": record["output"].strip()}
-        ]
-
 
 class QwenModel(BaseModel):
     def __init__(self, base_model_id, config):
         BaseModel.__init__(self, base_model_id, config)
 
-    def prepare_chat_template(self, record):
-        return [
-            {"role": "system",    "content": record["instruct"].strip()},
-            {"role": "user",      "content": record["input"].strip()},
-            {"role": "assistant", "content": record["output"].strip()}
-        ]
+
+class MistralModel(BaseModel):
+    def __init__(self, base_model_id, config):
+        BaseModel.__init__(self, base_model_id, config)
+
+
+class YandexModel(BaseModel):
+    def __init__(self, base_model_id, config):
+        BaseModel.__init__(self, base_model_id, config)
+
+    def apply_chat_template(self, record):
+        if record["instruct"].strip():
+            system = record["instruct"].strip()
+        else:
+            system = ""
+
+        user = record["input"].strip()
+        assistant = record["output"].strip()
+
+        if system:
+            return f"""<|im_start|>system
+{system}<|im_end|>
+<|im_start|>user
+{user}<|im_end|>
+<|im_start|>assistant
+{assistant}<|im_end|>"""
+        else:
+            return f"""<|im_start|>user
+{user}<|im_end|>
+<|im_start|>assistant
+{assistant}<|im_end|>"""
 
 
 class ModelsFactory:
@@ -85,5 +119,9 @@ class ModelsFactory:
             return CohereModel(base_model_id, config)
         elif config.model_type.startswith("qwen"):
             return QwenModel(base_model_id, config)
+        elif config.model_type.startswith("mistral"):
+            return MistralModel(base_model_id, config)
+        elif config.model_type.startswith("llama"):
+            return YandexModel(base_model_id, config)
         else:
             raise Exception("Unsupported model type: " + base_model_id)
