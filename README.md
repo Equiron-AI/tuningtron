@@ -37,8 +37,8 @@ When fine-tuning models with a large number of parameters, it might be necessary
 
 ```console
 sudo swapoff -a
-sudo fallocate -l 50G
-sudo chmod 600
+sudo fallocate -l 50G /swapfile
+sudo chmod 600 /swapfile
 sudo mkswap /swapfile
 sudo swapon /swapfile
 ```
